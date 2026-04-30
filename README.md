@@ -5,7 +5,7 @@ bytesize. is an interactive learning application that delivers bite-sized course
 
 ---
 
-## Features
+## Features
 - Argon2 session tokenisation for security purposes
 - Server-side validation
 - RESTful API
