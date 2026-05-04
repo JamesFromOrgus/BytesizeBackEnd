@@ -62,12 +62,12 @@ api.MapPost("/parse", (ParseRequest request) =>
 
 api.MapPost("/login", (LoginRequest request) =>
 {
-    Console.WriteLine($"Login: {request.Username}, Password: {request.Password}");
+    //Console.WriteLine($"Login: {request.Username}, Password: {request.Password}");
     string salt = db.GetSalt(request.Username);
-    Console.WriteLine($"Salt: {salt}");
+   // Console.WriteLine($"Salt: {salt}");
     string hash = Security.HashPassword(request.Password, salt);
-    Console.WriteLine($"{request.Password} -> {hash}");
-    Console.WriteLine(hash.Length);
+    //Console.WriteLine($"{request.Password} -> {hash}");
+    //Console.WriteLine(hash.Length);
     return Results.Ok(db.Login(request.Username, hash));
 });
 
@@ -75,7 +75,7 @@ api.MapPost("/register", (RegisterRequest request) =>
 {
     try
     {
-        Console.WriteLine($"Register hit - Username: '{request.Username}', Email: '{request.Email}'");
+        //Console.WriteLine($"Register hit - Username: '{request.Username}', Email: '{request.Email}'");
         if (db.UsernameInUse(request.Username)) return Results.BadRequest("Username already in use.");
         if (db.EmailInUse(request.Email)) return Results.BadRequest("Email address already in use.");
         if (!Security.IsValidEmail(request.Email)) return Results.BadRequest("Invalid email address.");
@@ -100,10 +100,11 @@ api.MapPost("/passwordreset", ([FromHeader(Name = "Authorization")] string autho
 
     int securityInformationID = db.GetSecurityInformationID((int)userID);
     
-    string salt = db.GetSalt((int)userID);
+    string salt =  Security.GenerateToken(255); //db.GetSalt((int)userID);
     string hash = Security.HashPassword(request.NewPassword, salt);
     db.UpdateRecord("SecurityInformation", "SecurityInformationID", securityInformationID, new Dictionary<string, object>
     {
+        ["PasswordSalt"] = salt,
         ["PasswordHash"] = hash
     });
     db.SecureSignOut((int)userID);
@@ -117,6 +118,57 @@ api.MapPost("/logout", ([FromHeader(Name = "Authorization")] string authorizatio
     return db.EndSession(token) ? Results.Ok("Successfully signed out.") : Results.Problem("Failed to sign out.");
 });
 
+api.MapPost("/startlesson", ([FromHeader(Name = "Authorization")] string authorization, LessonSelectRequest request) =>
+{
+    string? token = GetToken(authorization);
+    if (token == null) return Results.Unauthorized();
+    int? userID = db.GetUserIDFromToken(token);
+    if (userID == null) return Results.NotFound("User not found.");
+    
+    if (Lesson.StartLesson((int)userID, request.LessonNumber)) return Results.Ok();
+    return Results.NotFound("Lesson not found.");
+});
+
+api.MapPost("/question", ([FromHeader(Name = "Authorization")] string authorization, QuestionCompleteRequest request) =>
+{
+    string? token = GetToken(authorization);
+    if (token == null) return Results.Unauthorized();
+    int? userID = db.GetUserIDFromToken(token);
+    if (userID == null) return Results.NotFound("User not found.");
+
+    Lesson? lesson = Lesson.GetLesson((int)userID);
+    if (lesson == null) return Results.NotFound("Lesson not found.");
+    lesson.CompleteQuestion(db, (int)userID, request.IsCorrect);
+    return Results.Ok();
+});
+
+int GetLevel(int experience)
+{
+    return (-5 + (int)Math.Sqrt(25 + 40 * experience)) / 10;
+}
+
+int GetExperience(int level)
+{
+    return (int)(2.5 * level * (level + 1));
+}
+
+profile.MapGet("/experience", ([FromHeader(Name = "Authorization")] string authorization) =>
+{
+    string? token = GetToken(authorization);
+    if (token == null) return Results.Unauthorized();
+    int? userID = db.GetUserIDFromToken(token);
+    if (userID == null) return Results.NotFound("User not found.");
+    int experience = db.GetExperience((int)userID);
+    int level = (-5 + (int)Math.Sqrt(25 + 40 * experience)) / 10;  // quadratic formula: each level requirement increases by 5
+    
+    return Results.Ok(new {
+        LastRequiredExperience = GetExperience(level),
+        NextRequiredExperience = GetExperience(level + 1),
+        Experience = experience,
+        Level = level
+    });
+});
+
 profile.MapGet("/info", ([FromHeader(Name = "Authorization")] string authorization) =>
 {
     string? token = GetToken(authorization);
@@ -128,7 +180,7 @@ profile.MapGet("/info", ([FromHeader(Name = "Authorization")] string authorizati
 
 profile.MapPost("/info", ([FromHeader(Name = "Authorization")] string authorization, UserInformationChangeRequest request) =>
 {
-    Console.WriteLine(request.DateOfBirth);
+    //Console.WriteLine(request.DateOfBirth);
     string? token = GetToken(authorization);
     if (token == null) return Results.Unauthorized();
     int? userID = db.GetUserIDFromToken(token);
@@ -203,7 +255,7 @@ profile.MapGet("/icon", ([FromHeader(Name = "Authorization")] string authorizati
     return Results.File(bytes, "image/png");
 });
 
-string[] icons = new[] { "HeadphoneJake", "BMO", "BreadJake", "Gunter" };
+string[] icons = new[] { "HeadphoneJake", "Gunter", "BreadJake", "BMO" };
 
 profile.MapPost("/icon", ([FromHeader(Name = "Authorization")] string authorization, IconChangeRequest request) =>
 {
@@ -232,7 +284,6 @@ record UserInformationChangeRequest
     string? Username,
     DateOnly? DateOfBirth
 );
-record PasswordChangeRequest
-(
-    string NewPassword
-);
+record PasswordChangeRequest(string NewPassword);
+record LessonSelectRequest (int LessonNumber);
+record QuestionCompleteRequest(bool IsCorrect);

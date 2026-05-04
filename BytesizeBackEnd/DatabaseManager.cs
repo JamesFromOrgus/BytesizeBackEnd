@@ -220,7 +220,7 @@ public class DatabaseManager(string connectionString)
     
     public Dictionary<string, object> GetUserStats(int userID)
     {
-        string encoded = ExecuteString(@"select Statistics.Experience, Statistics.Experience,
+        string encoded = ExecuteString(@"select Statistics.Experience,
             Statistics.LessonCount, Statistics.CourseCount, Statistics.JoinDate
             from User inner join Statistics on User.StatisticsID=Statistics.StatisticsID
             where User.UserID = @UserID", new CommandParameter("@UserID", userID));
@@ -271,6 +271,61 @@ public class DatabaseManager(string connectionString)
             delete from Session
             where Session.UserID = @UserID
             ", new CommandParameter("@UserID", userID));
+    }
+    
+    public int GetStatsID(int userID)
+    {
+        string encoded = ExecuteString(@"
+            select StatisticsID from User
+            where UserID = @UserID",
+            new CommandParameter("@UserID", userID));
+        var result = GetFirstEntry(encoded);
+        if (result == null) throw new Exception();
+        return Convert.ToInt32(result["StatisticsID"]);
+    }
+
+    public int GetExperience(int userID)
+    {
+        int statsID = GetStatsID(userID);
+        string encoded = ExecuteString(@"
+            select Experience from Statistics
+            where StatisticsID = @statsID",
+            new CommandParameter("@statsID", statsID));
+        var result = GetFirstEntry(encoded);
+        if (result == null) throw new Exception();
+        return Convert.ToInt32(result["Experience"]);
+    }
+
+    public void AwardExperience(int userID, int experience)
+    {
+        int statsID = GetStatsID(userID);
+        int currentExperience = GetExperience(userID);
+        UpdateRecord("Statistics", "StatisticsID", statsID, new Dictionary<string, object>
+        {
+            ["Experience"] = currentExperience + experience
+        });
+    }
+    
+    public int GetLessonsCompleted(int userID)
+    {
+        int statsID = GetStatsID(userID);
+        string encoded = ExecuteString(@"
+            select LessonCount from Statistics
+            where StatisticsID = @statsID",
+            new CommandParameter("@statsID", statsID));
+        var result = GetFirstEntry(encoded);
+        if (result == null) throw new Exception();
+        return Convert.ToInt32(result["LessonCount"]);
+    }
+
+    public void AwardLessonCompletion(int userID)
+    {
+        int statsID = GetStatsID(userID);
+        int currentLessons = GetLessonsCompleted(userID);
+        UpdateRecord("Statistics", "StatisticsID", statsID, new Dictionary<string, object>
+        {
+            ["LessonCount"] = currentLessons + 1
+        });
     }
 
     public string GetSession(string sessionToken)
