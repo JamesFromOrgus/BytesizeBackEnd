@@ -73,17 +73,27 @@ public class DatabaseManager(string connectionString)
         CommandParameter[] parameters = new CommandParameter[valueReferences.Length];
         for (int i = 0; i < valueReferences.Length; i++)
         {
-            valueReferences[i] = "@"+valueReferences[i] + "Value";
+            valueReferences[i] = "@" + valueReferences[i] + "Value";
             parameters[i] = new CommandParameter(valueReferences[i], values[i]);
         }
-        ExecuteString($"insert into {table}({string.Join(", ", keys)}) values ({string.Join(", ", valueReferences)})",
-            parameters);
-        List<Dictionary<string, object>>? result = ToEntryList(
-            ExecuteString("SELECT LAST_INSERT_ID() AS id")
-        );
-        if (result == null) throw new Exception();  // maybe create new exception type in future
-        int id = Convert.ToInt32(result[0]["id"]);
-        return id;
+
+        using MySqlConnection connection = new MySqlConnection(_connectionString);
+        connection.Open();
+
+        // Insert
+        using (MySqlCommand cmd = new MySqlCommand(
+                   $"insert into {table}({string.Join(", ", keys)}) values ({string.Join(", ", valueReferences)})",
+                   connection))
+        {
+            foreach (var p in parameters)
+                cmd.Parameters.AddWithValue(p.Name, p.Value);
+            cmd.ExecuteNonQuery();
+        }
+        
+        using (MySqlCommand cmd = new MySqlCommand("SELECT LAST_INSERT_ID() AS id", connection))
+        {
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
     }
 
     public void UpdateRecord(string table, string idFieldName, object idFieldValue, Dictionary<string, object> values)
@@ -123,6 +133,7 @@ public class DatabaseManager(string connectionString)
         int securityInformationID = InsertInto("SecurityInformation",
             new List<string>{"PasswordSalt", "PasswordHash"},
             new List<object>{passwordSalt, passwordHash});
+        
         // User
         int userID = InsertInto("User",
             new List<string>{"PreferencesID", "UserInformationID", "StatisticsID", "SecurityInformationID"},
